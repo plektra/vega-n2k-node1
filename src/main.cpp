@@ -7,23 +7,33 @@
 #include <N2kMessages.h>
 #include <N2kMessagesEnumToStr.h>
 
-
 #include <DHT.h>
 #define DHT_PIN 15
 DHT dht(DHT_PIN, DHT22);
-int chk;
-float temp;
-float hum;
 
 #define AC_RELAY_PIN 19
 
-void SendN2kTemperature();
-void SendN2kACState();
+#define DC_RELAY_PIN 18
 
 const unsigned long TransmitMessages[] PROGMEM={
   130311L,
   127501L,
   0
+};
+
+typedef struct {
+  unsigned long PGN;
+  void (*Handler)(const tN2kMsg &N2kMsg); 
+} tNMEA2000Handler;
+
+void SendN2kACState();
+void SendN2kTemperature();
+void BinaryStatus(const tN2kMsg &N2kMsg);
+void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
+
+tNMEA2000Handler NMEA2000Handlers[]={
+  {127501L,&BinaryStatus},
+  {0,0}
 };
 
 void setup() {
@@ -43,10 +53,13 @@ void setup() {
   NMEA2000.SetMode(tNMEA2000::N2km_ListenAndNode, 42);
   NMEA2000.EnableForward(true);
   NMEA2000.ExtendTransmitMessages(TransmitMessages);
+  NMEA2000.SetMsgHandler(HandleNMEA2000Msg);
   NMEA2000.Open();
 
-  pinMode(DHT_PIN, INPUT);
-  pinMode(AC_RELAY_PIN, INPUT);
+  pinMode(AC_RELAY_PIN, INPUT_PULLDOWN);
+
+  pinMode(DC_RELAY_PIN, OUTPUT);
+  digitalWrite(DC_RELAY_PIN, HIGH);
 }
 
 void loop() {
@@ -67,6 +80,9 @@ tN2kOnOff ReadACState() {
   return (digitalRead(AC_RELAY_PIN)) ? N2kOnOff_Off : N2kOnOff_On;
 }
 
+void controlDCRelay(bool toggle) {
+  digitalWrite(DC_RELAY_PIN, !toggle);
+}
 
 #define ACStateUpdateInterval 2500
 
@@ -98,5 +114,29 @@ void SendN2kTemperature() {
     NMEA2000.SendMsg(N2kMsg);
 
     Serial.print(millis()); Serial.println(", Temperature send ready");
+  }
+}
+
+void BinaryStatus(const tN2kMsg &inboundMsg) {
+  unsigned char BankInstance;
+  tN2kOnOff Status1,Status2,Status3,Status4;
+  tN2kMsg outboundMsg;
+
+  if (ParseN2kBinaryStatus(inboundMsg,BankInstance,Status1,Status2,Status3,Status4) ) {
+    controlDCRelay((Status2 == N2kOnOff_On) ? true : false);
+  }
+  SetN2kBinaryStatus(outboundMsg, BankInstance, Status1, Status2, Status3, Status4);
+  NMEA2000.SendMsg(outboundMsg);
+}
+
+void HandleNMEA2000Msg(const tN2kMsg &N2kMsg) {
+  int iHandler;
+  
+  // Find handler
+  Serial.print("In Main Handler: "); Serial.println(N2kMsg.PGN);
+  for (iHandler=0; NMEA2000Handlers[iHandler].PGN!=0 && !(N2kMsg.PGN==NMEA2000Handlers[iHandler].PGN); iHandler++);
+  
+  if (NMEA2000Handlers[iHandler].PGN!=0) {
+    NMEA2000Handlers[iHandler].Handler(N2kMsg); 
   }
 }
