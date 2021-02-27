@@ -1,5 +1,4 @@
-name: 'Vega NMEA2000 Node 1'
-description: 'Sensor/control node'
+name: 'Build firmware'
 
 on: [push]
 
