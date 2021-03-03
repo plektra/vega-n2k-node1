@@ -17,9 +17,9 @@ jobs:
       run: |
         echo ::set-output name=version::${GITHUB_REF#refs/tags/v}
     - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJSON(github) }}
-        run: echo "$GITHUB_CONTEXT"
+      env:
+        GITHUB_CONTEXT: ${{ toJSON(github) }}
+      run: echo "$GITHUB_CONTEXT"
     - name: Cache pip
       uses: actions/cache@v2
       with:
