@@ -14,8 +14,9 @@ jobs:
     - uses: actions/checkout@v2
     - name: Meta
       id: meta
-      run: echo ::set-output name=version::${github.ref#refs/tags/v}
-      run: echo ::set-output name=repository::${github.repository#${github.repository_owner}/}
+      run: |
+        echo ::set-output name=version::${github.ref#refs/tags/v}
+        echo ::set-output name=repository::${github.repository#${github.repository_owner}/}
     - name: Cache pip
       uses: actions/cache@v2
       with:
