@@ -12,9 +12,10 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Version
-      id: version
-      run: echo ::set-output name=tag::${GITHUB_REF#refs/tags/v}
+    - name: Meta
+      id: meta
+      run: echo ::set-output name=version::${github.ref#refs/tags/v}
+      run: echo ::set-output name=repository::${github.repository#${github.repository_owner}/}
     - name: Cache pip
       uses: actions/cache@v2
       with:
@@ -36,7 +37,7 @@ jobs:
     - name: Run PlatformIO
       run: pio run -e az-delivery-devkit-v4
     - name: Copy firmware image to S3 bucket
-      run: aws s3 cp .pio/build/az-delivery-devkit-v4/firmware.bin s3://vega-ota/test/firmware-${{ steps.version.outputs.tag }}.bin --acl public-read
+      run: aws s3 cp .pio/build/az-delivery-devkit-v4/firmware.bin s3://vega-ota/${{ steps.meta.outputs.repository }}/firmware-${{ steps.meta.outputs.version }}.bin --acl public-read
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
