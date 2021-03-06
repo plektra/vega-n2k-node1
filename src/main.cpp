@@ -1,8 +1,5 @@
 #include <Arduino.h>
-#include <esp_https_ota.h>
-#include <esp_task_wdt.h>
-
-extern const uint8_t S3CA[] asm("_binary_src_s3_ca_pem_start");
+#include "ota.h"
 
 #define ESP32_CAN_TX_PIN GPIO_NUM_22
 #define ESP32_CAN_RX_PIN GPIO_NUM_21
@@ -42,6 +39,8 @@ tNMEA2000Handler NMEA2000Handlers[]={
 
 void setup() {
   Serial.begin(115200); delay(500);
+
+  OTAUpdate();
 
   dht.begin();
 
@@ -143,30 +142,4 @@ void HandleNMEA2000Msg(const tN2kMsg &N2kMsg) {
   if (NMEA2000Handlers[iHandler].PGN!=0) {
     NMEA2000Handlers[iHandler].Handler(N2kMsg); 
   }
-}
-
-esp_err_t doUpdate() {
-  esp_http_client_config_t http_conf = {
-    .url = "https://vega-ota.s3.eu-north-1.amazonaws.com/vega-n2k-node1/firmware-latest.bin",
-    .host = NULL,
-    .port = 443,
-    .username = NULL,
-    .password = NULL,
-    .auth_type = HTTP_AUTH_TYPE_NONE,
-    .path = NULL,
-    .query = NULL,
-    .cert_pem = (char *)S3CA,
-  };
-
-  esp_task_wdt_init(15,0);
-  esp_err_t ret = esp_https_ota(&http_conf);
-  esp_task_wdt_init(5,0);
-  if (ret == ESP_OK) {
-    Serial.println("Update successful!");
-    esp_restart();
-  } else {
-    Serial.println("Update failed!");
-    return ESP_FAIL;
-  }
-  return ESP_OK;
 }
