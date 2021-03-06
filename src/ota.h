@@ -4,7 +4,6 @@
 #include <HTTPClient.h>
 #include <esp_https_ota.h>
 #include <esp_task_wdt.h>
-//#include <semver.h>
 
 extern const uint8_t S3CA[] asm("_binary_src_s3_ca_pem_start");
 

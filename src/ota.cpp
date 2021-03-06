@@ -1,7 +1,5 @@
 #include "ota.h"
 
-//extern const uint8_t S3CA[] asm("_binary_src_s3_ca_pem_start");
-
 void OTAUpdate() {
   const size_t strLen = 32;
   const int SSIDPos = 0;
@@ -13,8 +11,6 @@ void OTAUpdate() {
   char node[strLen]; // e.g. vega-n2k-node1
   char currentVersion[16]; // semver
   char latestVersion[16];
-  // semver_t currentVersionSemVer = {};
-  // semver_t latestVersionSemVer = {};
 
   const char *imageUrlFormat = "https://vega-ota.s3.eu-north-1.amazonaws.com/%s/%s";
   char imageUrl[128];
@@ -26,27 +22,16 @@ void OTAUpdate() {
   readStr(passwordPos, password, strLen);
   readStr(nodePos, node, strLen);
   readStr(versionPos, currentVersion, 16);
-  // semver_parse(currentVersion, &currentVersionSemVer);
 
   connectWiFi(SSID, password);
 
   getLatestVersion(imageUrlFormat, node, latestVersion);
-  // int c = strcmp(currentVersion, latestVersion);
-  // Serial.printf("Current: %s\nLatest: %s\nCompare: %i\n", currentVersion, latestVersion, c);
 
   if (strcmp(currentVersion, latestVersion) == 0) {
     Serial.printf("Current version %s is the latest, disconnecting WiFi and skipping update.\n", currentVersion);
     WiFi.disconnect();
     return;
   }
-  // semver_parse(latestVersion, &latestVersionSemVer);
-  // if (semver_compare(latestVersionSemVer, currentVersionSemVer) == 0) {
-  //   Serial.printf("Current version %s is the latest, rebooting.\n", currentVersion);
-  //   esp_restart();
-  // } else {
-  //   semver_free(&currentVersionSemVer);
-  //   semver_free(&latestVersionSemVer);
-  // }
 
   char imageName[32];
   sprintf(imageName, "firmware-%s.bin", latestVersion);
