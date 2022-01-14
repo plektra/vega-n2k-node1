@@ -1,8 +1,8 @@
 #include <Arduino.h>
 #include "ota.h"
 
-#define ESP32_CAN_TX_PIN GPIO_NUM_22
-#define ESP32_CAN_RX_PIN GPIO_NUM_21
+#define ESP32_CAN_TX_PIN GPIO_NUM_32
+#define ESP32_CAN_RX_PIN GPIO_NUM_34
 
 #include <NMEA2000_CAN.h>
 #include <N2kMessages.h>
