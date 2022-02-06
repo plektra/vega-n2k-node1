@@ -7,9 +7,9 @@
 
 extern const uint8_t S3CA[] asm("_binary_src_s3_ca_pem_start");
 
-void OTAUpdate();
-void connectWiFi(char *SSID, char *password);
-void getLatestVersion(const char *imageUrlFormat, char *node, char *latestVersion);
+boolean OTAUpdate();
+boolean connectWiFi(char *SSID, char *password);
+boolean getLatestVersion(const char *imageUrlFormat, char *node, char *latestVersion);
 void readStr(int offset, char *data, size_t len);
 void writeStr(char *data, int offset);
 boolean doUpdate(char *imageUrl);

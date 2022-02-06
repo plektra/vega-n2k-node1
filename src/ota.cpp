@@ -1,6 +1,6 @@
 #include "ota.h"
 
-void OTAUpdate() {
+boolean OTAUpdate() {
   const size_t strLen = 32;
   const int SSIDPos = 0;
   const int passwordPos = 32;
@@ -23,14 +23,17 @@ void OTAUpdate() {
   readStr(nodePos, node, strLen);
   readStr(versionPos, currentVersion, 16);
 
-  connectWiFi(SSID, password);
+  if (!connectWiFi(SSID, password)) return false;
 
-  getLatestVersion(imageUrlFormat, node, latestVersion);
+  if (!getLatestVersion(imageUrlFormat, node, latestVersion)) {
+    WiFi.disconnect();
+    return false;
+  }
 
   if (strcmp(currentVersion, latestVersion) == 0) {
     Serial.printf("Current version %s is the latest, disconnecting WiFi and skipping update.\n", currentVersion);
     WiFi.disconnect();
-    return;
+    return true;
   }
 
   char imageName[32];
@@ -47,19 +50,25 @@ void OTAUpdate() {
   }
 }
 
-void connectWiFi(char *SSID, char *password) {
+boolean connectWiFi(char *SSID, char *password) {
   Serial.print("Connecting WiFi");
 
   WiFi.begin(SSID, password);
+  int retries = 0;
   while (WiFi.status() != WL_CONNECTED) {
     delay(1000);
     Serial.print('.');
+    if (retries++ >= 5) {
+      Serial.println("\nUnable to connect WiFi!");
+      return false;
+    }
   }
 
   Serial.print("\nConnected, IP address: "); Serial.println(WiFi.localIP());
+  return true;
 }
 
-void getLatestVersion(const char *imageUrlFormat, char *node, char *latestVersion) {
+boolean getLatestVersion(const char *imageUrlFormat, char *node, char *latestVersion) {
   char versionUrl[128];
   sprintf(versionUrl, imageUrlFormat, node, "latest.txt");
 
@@ -75,9 +84,11 @@ void getLatestVersion(const char *imageUrlFormat, char *node, char *latestVersio
       ver.trim();
       ver.toCharArray(latestVersion, 16);
       Serial.printf("Got version %s\n", latestVersion);
-    } else {
-      Serial.printf("Version fetch failed, HTTP code %i\n", httpCode);
+      return true;
     }
+
+    Serial.printf("Version fetch failed, HTTP code %i\n", httpCode);
+    return false;
   }
 }
 
