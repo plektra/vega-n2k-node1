@@ -1,9 +1,13 @@
 #include <Arduino.h>
 #include "ota.h"
 
-#define ESP32_CAN_TX_PIN GPIO_NUM_32
-#define ESP32_CAN_RX_PIN GPIO_NUM_34
-#include <NMEA2000_CAN.h>
+#include <ReactESP.h>
+using namespace reactesp;
+ReactESP app;
+
+#define CAN_TX_PIN GPIO_NUM_32
+#define CAN_RX_PIN GPIO_NUM_34
+#include <NMEA2000_esp32.h>
 #include <N2kMessages.h>
 #include <N2kMessagesEnumToStr.h>
 
@@ -21,6 +25,7 @@
 #include "OneWire.h"
 #include "DallasTemperature.h"
 
+tNMEA2000* n2k;
 Adafruit_BME280 bme;
 TwoWire* i2c;
 OneWire oneWire(ONEWIRE_PIN);
@@ -38,15 +43,16 @@ typedef struct {
   void (*Handler)(const tN2kMsg &N2kMsg); 
 } tNMEA2000Handler;
 
-void SendN2kACState();
-void SendN2kTemperature();
-void SendBinaryStatus(boolean immediately = false);
-void BinaryStatusHandler(const tN2kMsg &N2kMsg);
+void SendACState();
+void SendEnvironmentData();
+void SendEnclosureTemperature();
+void SendSwitchBankStatus();
+void SwitchBankStatusHandler(const tN2kMsg &N2kMsg);
 void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
 void RebootHandler(const tN2kMsg &N2kMsg);
 
 tNMEA2000Handler NMEA2000Handlers[]={
-  {127501L,&BinaryStatusHandler},
+  {127501L,&SwitchBankStatusHandler},
   {61200L,&RebootHandler},
   {0,0}
 };
@@ -58,6 +64,7 @@ void setup() {
 
   Serial.begin(115200); delay(500);
 
+  // Download latest firmware and upgrade automatically
   if (!OTAUpdate()) {
     for (int i=0; i<=10; i++) {
       digitalWrite(LED_PIN, LOW);
@@ -66,45 +73,61 @@ void setup() {
       delay(100);
     }
   }
-
   digitalWrite(LED_PIN, LOW);
 
-  NMEA2000.SetProductInformation("00000001");
-  NMEA2000.SetDeviceInformation(1, // Unique number. Use e.g. Serial number.
+  // Set up CAN bus and NMEA2000
+  n2k = new tNMEA2000_esp32(CAN_TX_PIN, CAN_RX_PIN);
+  n2k->SetProductInformation("00000001");
+  n2k->SetDeviceInformation(1, // Unique number. Use e.g. Serial number.
                                 130, // Device function=Temperature. See codes on http://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
                                 75, // Device class=Sensor Communication Interface. See codes on  http://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
                                 2040 // Just choosen free from code list on http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf                               
                                );
 
-  NMEA2000.SetForwardStream(&Serial);
-  NMEA2000.SetForwardType(tNMEA2000::fwdt_Text);
-  NMEA2000.SetMode(tNMEA2000::N2km_ListenAndNode, 1);
-  NMEA2000.EnableForward(false);
-  NMEA2000.ExtendTransmitMessages(TransmitMessages);
-  NMEA2000.SetMsgHandler(HandleNMEA2000Msg);
-  NMEA2000.Open();
+  n2k->SetForwardStream(&Serial);
+  n2k->SetForwardType(tNMEA2000::fwdt_Text);
+  n2k->SetMode(tNMEA2000::N2km_ListenAndNode, 1);
+  n2k->EnableForward(false);
+  n2k->ExtendTransmitMessages(TransmitMessages);
+  n2k->SetMsgHandler(HandleNMEA2000Msg);
+  n2k->Open();
 
+  // Set up i2c
   i2c = new TwoWire(0);
   i2c->begin(SDA_PIN, SCL_PIN);
 
+  // Set up BME280 sensor using i2c
   if (!bme.begin(0x76, i2c)) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
   }
   bme.setTemperatureCompensation(-1.0);
 
+  // Set up DS18B20 temperature sensor using 1-wire
   ds = new DallasTemperature(&oneWire);
   ds->begin();
 
+  // Set up relays
   pinMode(DC_RELAY_1_PIN, OUTPUT);
   pinMode(DC_RELAY_2_PIN, OUTPUT);
   pinMode(AC_RELAY_PIN, INPUT_PULLDOWN);
+
+  // Parse incoming messages every 1ms
+  app.onRepeat(1, []() {
+    n2k->ParseMessages();
+  });
+
+  // Send data every 2,5 sec
+  app.onRepeat(2500, []() {
+    SendEnclosureTemperature();
+    SendACState();
+    SendEnvironmentData();
+    SendSwitchBankStatus();
+    Serial.println();
+  });
 }
 
 void loop() {
-  NMEA2000.ParseMessages();
-  SendN2kTemperature();
-  SendN2kACState();
-  SendBinaryStatus();
+  app.tick();
 }
 
 double ReadEnclosureTemp() {
@@ -128,72 +151,68 @@ tN2kOnOff ReadACState() {
   return (digitalRead(AC_RELAY_PIN)) ? N2kOnOff_On : N2kOnOff_Off;
 }
 
-#define ACStateUpdateInterval 2500
+// NMEA2000 message senders
 
-void SendN2kACState() {
+void SendACState() {
+  tN2kMsg N2kMsg;
+  
+  SetN2kBinaryStatus(N2kMsg, 2, ReadACState());
+  if (n2k->SendMsg(N2kMsg)) {
+    Serial.print(millis()); Serial.println(", AC State send ready");
+  } else {
+    Serial.print(millis()); Serial.println(", AC State send failed");
+  }
+}
+
+void SendEnclosureTemperature() {
   tN2kMsg N2kMsg;
 
-  static unsigned long updated = millis();
-
-  if ( updated + ACStateUpdateInterval < millis() ) {
-    updated = millis();
-
-    SetN2kBinaryStatus(N2kMsg, 2, ReadACState());
-    NMEA2000.SendMsg(N2kMsg);
-    Serial.print(millis()); Serial.println(", AC State send ready");
+  SetN2kTemperature(N2kMsg, 1, 1, N2kts_InsideTemperature, ReadEnclosureTemp());
+  if (n2k->SendMsg(N2kMsg)) {
+    Serial.print(millis()); Serial.println(", Enclosure temperature send ready");
+  } else {
+    Serial.print(millis()); Serial.println(", Enclosure temperature send failed");
   }
 }
 
+void SendEnvironmentData() {
+  tN2kMsg N2kMsg;
 
-#define TempUpdatePeriod 2500
-
-void SendN2kTemperature() {
-  static unsigned long TempUpdated=millis();
-  tN2kMsg EnvMsg;
-  tN2kMsg TempMsg;
-  
-  if (TempUpdated+TempUpdatePeriod<millis()) {
-    TempUpdated=millis();
-
-    SetN2kEnvironmentalParameters(EnvMsg, 1, N2kts_EngineRoomTemperature, ReadCabinTemp(), N2khs_InsideHumidity, ReadHumidity(), ReadPressure());
-    NMEA2000.SendMsg(EnvMsg);
-    
-    SetN2kTemperature(TempMsg, 1, 1, N2kts_InsideTemperature, ReadEnclosureTemp());
-    NMEA2000.SendMsg(TempMsg);
-
-    Serial.print(millis()); Serial.println(", Temperature send ready");
+  SetN2kEnvironmentalParameters(N2kMsg, 1, N2kts_EngineRoomTemperature, ReadCabinTemp(), N2khs_InsideHumidity, ReadHumidity(), ReadPressure());
+  if (n2k->SendMsg(N2kMsg)) {
+    Serial.print(millis()); Serial.println(", Environment data send ready");
+  } else {
+    Serial.print(millis()); Serial.println(", Environment data send failed");
   }
 }
 
-void BinaryStatusHandler(const tN2kMsg &inboundMsg) {
-  unsigned char BankInstance = 1;
+void SendSwitchBankStatus() {
+  tN2kMsg N2kMsg;
+
+  SetN2kBinaryStatus(N2kMsg, 1,
+    (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
+    (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
+    N2kOnOff_Unavailable,
+    N2kOnOff_Unavailable);
+
+  if (n2k->SendMsg(N2kMsg)) {
+    Serial.print(millis()); Serial.println(", Binary switch bank status send ready");
+  } else {
+    Serial.print(millis()); Serial.println(", Binary switch bank status send failed");
+  }
+}
+
+// NMEA2000 incoming message handlers
+
+void SwitchBankStatusHandler(const tN2kMsg &inboundMsg) {
+  unsigned char BankInstance;
   tN2kOnOff Status1,Status2,Status3,Status4;
 
   if (ParseN2kBinaryStatus(inboundMsg,BankInstance,Status1,Status2,Status3,Status4) ) {
     if (Status1 == N2kOnOff_On || Status1 == N2kOnOff_Off) digitalWrite(DC_RELAY_1_PIN, (Status1 == N2kOnOff_On) ? HIGH : LOW);
     if (Status2 == N2kOnOff_On || Status2 == N2kOnOff_Off) digitalWrite(DC_RELAY_2_PIN, (Status2 == N2kOnOff_On) ? HIGH : LOW);
     delay(2);
-    SendBinaryStatus(true);
-  }
-}
-
-#define BinaryStatusUpdateInterval 2500
-
-void SendBinaryStatus(boolean immediately) {
-  tN2kMsg outboundMsg;
-
-  static unsigned long updated = millis();
-
-  if (immediately || updated + ACStateUpdateInterval < millis()) {
-    updated = millis();
-    SetN2kBinaryStatus(outboundMsg, 1,
-      (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
-      (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
-      N2kOnOff_Unavailable,
-      N2kOnOff_Unavailable);
-    NMEA2000.SendMsg(outboundMsg);
-
-    Serial.print(millis()); Serial.println(", Binary switch bank status send ready");
+    SendSwitchBankStatus();
   }
 }
 
