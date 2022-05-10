@@ -122,9 +122,9 @@ void setup() {
 
   app.onRepeat(3000, []() {
     if (digitalRead(RPI_POWER_STATE_PIN) == HIGH) {
-      Serial.print("\nScreen on\n");
+      Serial.print("Screen on\n");
     } else {
-      Serial.print("\nScreen off\n");
+      Serial.print("Screen off\n");
     }
   });
 
@@ -132,8 +132,8 @@ void setup() {
   app.onRepeat(2500, []() {
     SendEnclosureTemperature();
     SendEnvironmentData();
-    SendSwitchBankStatus(1);
-    SendSwitchBankStatus(2);
+    SendSwitchBankStatus('1');
+    SendSwitchBankStatus('2');
     Serial.println();
   });
 }
@@ -191,14 +191,14 @@ void SendSwitchBankStatus(unsigned char DeviceBankInstance) {
   tN2kMsg N2kMsg;
 
   switch (DeviceBankInstance) {
-    case 1:
+    case '1':
       SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
         (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(DC_RELAY_3_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(AC_RELAY_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
       break;
-    case 2:
+    case '2':
       SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
         (digitalRead(RPI_POWER_STATE_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
   }
