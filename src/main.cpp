@@ -19,6 +19,8 @@ ReactESP app;
 #define DC_RELAY_2_PIN 13
 #define DC_RELAY_3_PIN 14
 #define AC_RELAY_PIN 15
+#define RPI_POWER_STATE_PIN 26
+#define RPI_SHUTDOWN_PIN 27
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
@@ -43,10 +45,9 @@ typedef struct {
   void (*Handler)(const tN2kMsg &N2kMsg); 
 } tNMEA2000Handler;
 
-void SendACState();
 void SendEnvironmentData();
 void SendEnclosureTemperature();
-void SendSwitchBankStatus();
+void SendSwitchBankStatus(unsigned char DeviceBankInstance);
 void SwitchBankStatusHandler(const tN2kMsg &N2kMsg);
 void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
 void RebootHandler(const tN2kMsg &N2kMsg);
@@ -106,22 +107,33 @@ void setup() {
   ds = new DallasTemperature(&oneWire);
   ds->begin();
 
-  // Set up relays
+  // Set up GPIO pins
   pinMode(DC_RELAY_1_PIN, OUTPUT);
   pinMode(DC_RELAY_2_PIN, OUTPUT);
+  pinMode(DC_RELAY_3_PIN, INPUT_PULLDOWN);
   pinMode(AC_RELAY_PIN, INPUT_PULLDOWN);
+  pinMode(RPI_POWER_STATE_PIN, INPUT_PULLDOWN);
+  pinMode(RPI_SHUTDOWN_PIN, OUTPUT);
 
   // Parse incoming messages every 1ms
   app.onRepeat(1, []() {
     n2k->ParseMessages();
   });
 
+  app.onRepeat(3000, []() {
+    if (digitalRead(RPI_POWER_STATE_PIN) == HIGH) {
+      Serial.print("\nScreen on\n");
+    } else {
+      Serial.print("\nScreen off\n");
+    }
+  });
+
   // Send data every 2,5 sec
   app.onRepeat(2500, []() {
     SendEnclosureTemperature();
-    SendACState();
     SendEnvironmentData();
-    SendSwitchBankStatus();
+    SendSwitchBankStatus(1);
+    SendSwitchBankStatus(2);
     Serial.println();
   });
 }
@@ -153,17 +165,6 @@ tN2kOnOff ReadACState() {
 
 // NMEA2000 message senders
 
-void SendACState() {
-  tN2kMsg N2kMsg;
-  
-  SetN2kBinaryStatus(N2kMsg, 2, ReadACState());
-  if (n2k->SendMsg(N2kMsg)) {
-    Serial.print(millis()); Serial.println(", AC State send ready");
-  } else {
-    Serial.print(millis()); Serial.println(", AC State send failed");
-  }
-}
-
 void SendEnclosureTemperature() {
   tN2kMsg N2kMsg;
 
@@ -186,19 +187,26 @@ void SendEnvironmentData() {
   }
 }
 
-void SendSwitchBankStatus() {
+void SendSwitchBankStatus(unsigned char DeviceBankInstance) {
   tN2kMsg N2kMsg;
 
-  SetN2kBinaryStatus(N2kMsg, 1,
-    (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
-    (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
-    N2kOnOff_Unavailable,
-    N2kOnOff_Unavailable);
+  switch (DeviceBankInstance) {
+    case 1:
+      SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
+        (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
+        (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
+        (digitalRead(DC_RELAY_3_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
+        (digitalRead(AC_RELAY_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
+      break;
+    case 2:
+      SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
+        (digitalRead(RPI_POWER_STATE_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
+  }
 
   if (n2k->SendMsg(N2kMsg)) {
-    Serial.print(millis()); Serial.println(", Binary switch bank status send ready");
+    Serial.print(millis()); Serial.printf(", Binary switch bank %c status send ready\n", DeviceBankInstance);
   } else {
-    Serial.print(millis()); Serial.println(", Binary switch bank status send failed");
+    Serial.print(millis()); Serial.printf(", Binary switch bank %c status send failed\n", DeviceBankInstance);
   }
 }
 
@@ -209,10 +217,17 @@ void SwitchBankStatusHandler(const tN2kMsg &inboundMsg) {
   tN2kOnOff Status1,Status2,Status3,Status4;
 
   if (ParseN2kBinaryStatus(inboundMsg,BankInstance,Status1,Status2,Status3,Status4) ) {
-    if (Status1 == N2kOnOff_On || Status1 == N2kOnOff_Off) digitalWrite(DC_RELAY_1_PIN, (Status1 == N2kOnOff_On) ? HIGH : LOW);
-    if (Status2 == N2kOnOff_On || Status2 == N2kOnOff_Off) digitalWrite(DC_RELAY_2_PIN, (Status2 == N2kOnOff_On) ? HIGH : LOW);
+    switch (BankInstance) {
+      case 1:
+        if (Status1 == N2kOnOff_On || Status1 == N2kOnOff_Off) digitalWrite(DC_RELAY_1_PIN, (Status1 == N2kOnOff_On) ? HIGH : LOW);
+        if (Status2 == N2kOnOff_On || Status2 == N2kOnOff_Off) digitalWrite(DC_RELAY_2_PIN, (Status2 == N2kOnOff_On) ? HIGH : LOW);
+        break;
+      case 2:
+        if (Status1 == N2kOnOff_On || Status1 == N2kOnOff_Off) digitalWrite(RPI_SHUTDOWN_PIN, (Status1 == N2kOnOff_On) ? HIGH : LOW);
+        break;
+    }
     delay(2);
-    SendSwitchBankStatus();
+    SendSwitchBankStatus(BankInstance);
   }
 }
 
