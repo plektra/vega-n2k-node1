@@ -132,8 +132,8 @@ void setup() {
   app.onRepeat(2500, []() {
     SendEnclosureTemperature();
     SendEnvironmentData();
-    SendSwitchBankStatus('1');
-    SendSwitchBankStatus('2');
+    SendSwitchBankStatus(1);
+    SendSwitchBankStatus(2);
     Serial.println();
   });
 }
@@ -191,22 +191,22 @@ void SendSwitchBankStatus(unsigned char DeviceBankInstance) {
   tN2kMsg N2kMsg;
 
   switch (DeviceBankInstance) {
-    case '1':
+    case 1:
       SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
         (digitalRead(DC_RELAY_1_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(DC_RELAY_2_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(DC_RELAY_3_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off,
         (digitalRead(AC_RELAY_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
       break;
-    case '2':
+    case 2:
       SetN2kBinaryStatus(N2kMsg, DeviceBankInstance,
         (digitalRead(RPI_POWER_STATE_PIN) == HIGH) ? N2kOnOff_On : N2kOnOff_Off);
   }
 
   if (n2k->SendMsg(N2kMsg)) {
-    Serial.print(millis()); Serial.printf(", Binary switch bank %c status send ready\n", DeviceBankInstance);
+    Serial.print(millis()); Serial.printf(", Binary switch bank %u status send ready\n", DeviceBankInstance);
   } else {
-    Serial.print(millis()); Serial.printf(", Binary switch bank %c status send failed\n", DeviceBankInstance);
+    Serial.print(millis()); Serial.printf(", Binary switch bank %u status send failed\n", DeviceBankInstance);
   }
 }
 
