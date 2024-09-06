@@ -53,7 +53,7 @@ void HandleNMEA2000Msg(const tN2kMsg &N2kMsg);
 void RebootHandler(const tN2kMsg &N2kMsg);
 
 tNMEA2000Handler NMEA2000Handlers[]={
-  {127501L,&SwitchBankStatusHandler},
+  {127502L,&SwitchBankStatusHandler},
   {61200L,&RebootHandler},
   {0,0}
 };
@@ -114,6 +114,8 @@ void setup() {
   pinMode(AC_RELAY_PIN, INPUT_PULLDOWN);
   pinMode(RPI_POWER_STATE_PIN, INPUT_PULLDOWN);
   pinMode(RPI_SHUTDOWN_PIN, OUTPUT);
+  
+  digitalWrite(RPI_SHUTDOWN_PIN, HIGH);
 
   // Parse incoming messages every 1ms
   app.onRepeat(1, []() {
